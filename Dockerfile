@@ -8,13 +8,16 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /srv
 
+# Install olares-cli from npm (latest published). The in-pod loginOlaresCLI
+# mount works with any 1.12.7+ CLI that understands managed credentials.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends curl ca-certificates gnupg \
  && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
  && apt-get install -y --no-install-recommends nodejs \
- && npm install -g @olares/cli@1.12.8-cli.0 \
- && OCLI="$(find /usr/lib /usr/local -name olares-cli -type f 2>/dev/null | head -1)" \
- && if [ -n "$OCLI" ]; then ln -sf "$OCLI" /usr/local/bin/olares-cli; fi \
+ && npm install -g @olares/cli@latest \
+ && OCLI="$(find /usr -name olares-cli -type f 2>/dev/null | head -1)" \
+ && test -n "$OCLI" \
+ && ln -sf "$OCLI" /usr/local/bin/olares-cli \
  && olares-cli version \
  && apt-get clean && rm -rf /var/lib/apt/lists/*
 
