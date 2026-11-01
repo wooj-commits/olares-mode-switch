@@ -1,0 +1,126 @@
+olaresManifest.version: '0.12.0'
+olaresManifest.type: app
+apiVersion: 'v3'
+
+metadata:
+  name: modeswitch
+  title: GPU Mode Switch
+  description: Toggle Production (Qwen 27B) vs Training (Unsloth) on the RTX GPU
+  icon: https://app.cdn.olares.com/appstore/default/defaulticon.webp
+  version: 0.1.0
+  categories:
+  - AI
+  - Utilities_v112
+
+entrances:
+- name: modeswitch
+  host: modeswitch
+  port: 8080
+  title: GPU Mode Switch
+  icon: https://app.cdn.olares.com/appstore/default/defaulticon.webp
+  authLevel: private
+  visible: true
+  openMethod: iframe
+
+permission:
+  appData: true
+  # Standing CLI credential as the installing user (allowlist required).
+  loginOlaresCLI: true
+
+spec:
+  versionName: '0.1.0'
+  fullDescription: |
+    One-page control to flip the Olares One RTX 5090 between Production
+    (Qwen3.6-27B llama.cpp, MemorySlice 23Gi) and Training (Unsloth, ~22Gi).
+    Stops the other GPU app first, then resumes with computeBinding.
+    Ensures Router, EmbeddingGemma (Intel — never rebound), and kbmcp are
+    Running in both modes. Private entrance (Olares login).
+  developer: woojinc1205
+  website: https://github.com/wooj-commits/olares-mode-switch
+  sourceCode: https://github.com/wooj-commits/olares-mode-switch
+  submitter: woojinc1205
+  doc: https://github.com/wooj-commits/olares-mode-switch
+  locale:
+  - en-US
+  license:
+  - text: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+  supportArch:
+  - amd64
+  onlyAdmin: true
+  accelerator:
+  - mode: cpu
+    requiredCpu: 100m
+    limitedCpu: "1"
+    requiredMemory: 128Mi
+    limitedMemory: 512Mi
+    requiredDisk: 64Mi
+    limitedDisk: 2Gi
+
+options:
+  apiTimeout: 0
+  dependencies:
+  - name: olares
+    type: system
+    version: '>=1.12.7-0'
+
+workloadReplicas:
+  modeswitch: 1
+
+envs:
+- envName: PROD_APP
+  required: true
+  type: string
+  editable: true
+  applyOnChange: true
+  default: "qwen3627b"
+  description: Market app name of the Qwen llama.cpp Engine Base clone
+- envName: TRAIN_APP
+  required: true
+  type: string
+  editable: true
+  applyOnChange: true
+  default: "unsloth"
+  description: Market app name of Unsloth
+- envName: GPU_NODE
+  required: true
+  type: string
+  editable: true
+  applyOnChange: true
+  default: ""
+  description: Node name from Settings → Accelerator (olares-cli settings compute list)
+- envName: GPU_DEVICE
+  required: true
+  type: string
+  editable: true
+  applyOnChange: true
+  default: ""
+  description: Device id from Settings → Accelerator
+- envName: PROD_VRAM_GI
+  required: true
+  type: string
+  editable: true
+  applyOnChange: true
+  default: "23"
+  description: MemorySlice Gi for Qwen in Production
+- envName: TRAIN_VRAM_GI
+  required: true
+  type: string
+  editable: true
+  applyOnChange: true
+  default: "22"
+  description: MemorySlice Gi for Unsloth in Training
+- envName: PRODUCTION_ENSURE_RUNNING
+  required: false
+  type: string
+  editable: true
+  applyOnChange: true
+  default: "qwen3627b,router,embeddinggemma,kbmcp"
+  description: Comma-separated apps that must be Running in Production (no GPU rebind for non-primary)
+- envName: TRAINING_ENSURE_RUNNING
+  required: false
+  type: string
+  editable: true
+  applyOnChange: true
+  default: "unsloth,router,embeddinggemma,kbmcp"
+  description: Comma-separated apps that must be Running in Training

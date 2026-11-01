@@ -1,0 +1,6 @@
+apiVersion: v2
+name: modeswitch
+description: Production ↔ Training GPU mode switch for Qwen and Unsloth
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

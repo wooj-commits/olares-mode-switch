@@ -1,0 +1,54 @@
+name: publish-image
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/wooj-commits/olares-mode-switch:0.1.0
+            ghcr.io/wooj-commits/olares-mode-switch:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/wooj-commits/olares-mode-switch
+            org.opencontainers.image.description=Olares GPU Production/Training mode switch
+            org.opencontainers.image.licenses=Apache-2.0
+
+      - name: Try make package public
+        continue-on-error: true
+        run: |
+          # Linked public repos still default packages to private; try API.
+          curl -sS -X PATCH \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/user/packages/container/olares-mode-switch \
+            -d '{"visibility":"public"}' || true

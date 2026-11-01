@@ -1,0 +1,6 @@
+*.tgz
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+app/olares-cli.bin

@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>GPU Mode Switch</title>
+<style>
+  :root { color-scheme: light dark; --bg:#0f1419; --card:#1a2332; --text:#e7ecf3; --muted:#9aa7b8;
+    --prod:#2f9e44; --train:#d9480f; --border:#2a3545; --err:#fa5252; --ok:#51cf66; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: var(--bg); color: var(--text); min-height:100vh; display:flex; justify-content:center; padding:24px; }
+  .wrap { width:min(720px, 100%); }
+  h1 { font-size:1.4rem; margin:0 0 4px; }
+  .sub { color:var(--muted); margin-bottom:20px; font-size:.95rem; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:18px; }
+  button.mode { appearance:none; border:2px solid var(--border); background:var(--card); color:var(--text);
+    border-radius:14px; padding:28px 16px; font-size:1.25rem; font-weight:700; cursor:pointer;
+    transition: transform .05s, border-color .15s, opacity .15s; }
+  button.mode:hover:not(:disabled) { transform: translateY(-1px); }
+  button.mode:disabled { opacity:.45; cursor:not-allowed; }
+  button#btn-prod.active, button#btn-prod:hover:not(:disabled) { border-color: var(--prod); }
+  button#btn-train.active, button#btn-train:hover:not(:disabled) { border-color: var(--train); }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:16px 18px; margin-bottom:14px; }
+  .label { color:var(--muted); font-size:.8rem; text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px; }
+  .status-line { font-size:1.05rem; line-height:1.45; }
+  .pill { display:inline-block; padding:2px 10px; border-radius:999px; font-size:.85rem; font-weight:600; background:#243044; }
+  .pill.prod { background:#1b3d28; color:#8ce99a; }
+  .pill.train { background:#4a1c0a; color:#ffc9a8; }
+  .pill.busy { background:#3b2f0b; color:#ffe066; }
+  table { width:100%; border-collapse:collapse; font-size:.92rem; }
+  td, th { text-align:left; padding:6px 4px; border-bottom:1px solid var(--border); }
+  th { color:var(--muted); font-weight:600; }
+  .err { color:var(--err); white-space:pre-wrap; word-break:break-word; }
+  .ok { color:var(--ok); }
+  .muted { color:var(--muted); }
+  .note { margin-top:8px; font-size:.92rem; }
+  pre.log { font-size:.72rem; max-height:160px; overflow:auto; background:#0b1016; padding:8px; border-radius:8px; color:#adb5bd; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>GPU Mode Switch</h1>
+  <p class="sub">Production = Qwen 27B on RTX · Training = Unsloth on RTX · Router / EmbeddingGemma / kbmcp stay up</p>
+
+  <div class="row">
+    <button class="mode" id="btn-prod" type="button">Production</button>
+    <button class="mode" id="btn-train" type="button">Training</button>
+  </div>
+
+  <div class="card">
+    <div class="label">Status</div>
+    <div class="status-line" id="status-line">Loading…</div>
+    <div class="note" id="kb-note"></div>
+  </div>
+
+  <div class="card">
+    <div class="label">Ensure-running apps</div>
+    <table>
+      <thead><tr><th>App</th><th>State</th></tr></thead>
+      <tbody id="apps-body"><tr><td colspan="2" class="muted">…</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="label">GPU binding</div>
+    <div id="binding" class="muted">—</div>
+  </div>
+
+  <div class="card">
+    <div class="label">Last error</div>
+    <div id="last-error" class="muted">none</div>
+  </div>
+
+  <div class="card">
+    <div class="label">Recent CLI log</div>
+    <pre class="log" id="log"></pre>
+  </div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+let busy = false;
+
+function pill(mode) {
+  if (mode === 'production') return '<span class="pill prod">Production</span>';
+  if (mode === 'training') return '<span class="pill train">Training</span>';
+  return `<span class="pill">${mode || 'unknown'}</span>`;
+}
+
+async function refresh() {
+  try {
+    const r = await fetch('/api/status');
+    const s = await r.json();
+    busy = !!s.busy;
+    $('btn-prod').disabled = busy;
+    $('btn-train').disabled = busy;
+    $('btn-prod').classList.toggle('active', s.mode === 'production');
+    $('btn-train').classList.toggle('active', s.mode === 'training');
+
+    const q = s.prod?.state || '?';
+    const u = s.train?.state || '?';
+    const bind = s.gpu_binding
+      ? `${s.gpu_binding.node} / ${s.gpu_binding.device} · prod ${s.gpu_binding.prod_gi}Gi · train ${s.gpu_binding.train_gi}Gi`
+      : 'not configured (set GPU_NODE + GPU_DEVICE envs)';
+    const busyTag = busy ? ' <span class="pill busy">switching…</span>' : '';
+    const ensureOk = s.ensure_all_running ? '<span class="ok">all Running</span>' : '<span class="err">waiting</span>';
+    $('status-line').innerHTML =
+      `${pill(s.mode)}${busyTag}<br>` +
+      `Qwen (<code>${s.config?.prod_app || ''}</code>): <b>${q}</b> · ` +
+      `Unsloth (<code>${s.config?.train_app || ''}</code>): <b>${u}</b><br>` +
+      `Ensure list: ${ensureOk}`;
+    $('kb-note').textContent = s.kb_ask_note || '';
+    $('binding').textContent = bind;
+
+    const rows = (s.ensure_apps || []).map(a =>
+      `<tr><td><code>${a.name}</code></td><td>${a.state}${a.error ? ' · ' + a.error : ''}</td></tr>`
+    ).join('') || '<tr><td colspan="2" class="muted">none</td></tr>';
+    $('apps-body').innerHTML = rows;
+
+    if (s.last_error) {
+      $('last-error').className = 'err';
+      $('last-error').textContent = s.last_error;
+    } else {
+      $('last-error').className = 'muted';
+      $('last-error').textContent = 'none';
+    }
+    $('log').textContent = (s.recent_log || []).join('\n');
+  } catch (e) {
+    $('status-line').textContent = 'Status fetch failed: ' + e;
+  }
+}
+
+async function switchMode(mode) {
+  if (busy) return;
+  busy = true;
+  $('btn-prod').disabled = true;
+  $('btn-train').disabled = true;
+  $('status-line').innerHTML = `${pill(mode)} <span class="pill busy">switching…</span>`;
+  try {
+    const r = await fetch('/api/switch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok || body.ok === false) {
+      $('last-error').className = 'err';
+      $('last-error').textContent = body.error || body.detail || ('HTTP ' + r.status);
+    }
+  } catch (e) {
+    $('last-error').className = 'err';
+    $('last-error').textContent = String(e);
+  }
+  await refresh();
+}
+
+$('btn-prod').onclick = () => switchMode('production');
+$('btn-train').onclick = () => switchMode('training');
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>

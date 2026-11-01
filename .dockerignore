@@ -1,0 +1,6 @@
+.git
+chart
+*.tgz
+**/__pycache__
+**/*.pyc
+.venv

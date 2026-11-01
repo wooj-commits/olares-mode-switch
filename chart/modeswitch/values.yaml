@@ -1,0 +1,29 @@
+image:
+  repository: ghcr.io/wooj-commits/olares-mode-switch
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+workloads:
+  modeswitch:
+    replicaCount: 1
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
+
+env:
+  PROD_APP: "qwen3627b"
+  TRAIN_APP: "unsloth"
+  GPU_NODE: ""
+  GPU_DEVICE: ""
+  PROD_VRAM_GI: "23"
+  TRAIN_VRAM_GI: "22"
+  PRODUCTION_ENSURE_RUNNING: "qwen3627b,router,embeddinggemma,kbmcp"
+  TRAINING_ENSURE_RUNNING: "unsloth,router,embeddinggemma,kbmcp"
+  WATCH_TIMEOUT: "15m"
+  LOG_LEVEL: "INFO"
+  MODE_DATA_DIR: "/app/data"
