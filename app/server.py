@@ -25,18 +25,18 @@ OLARES_CLI = os.environ.get("OLARES_CLI", "olares-cli")
 DATA_DIR = Path(os.environ.get("MODE_DATA_DIR", "/app/data"))
 STATE_FILE = DATA_DIR / "state.json"
 
-PROD_APP = os.environ.get("PROD_APP", "qwen3627b").strip()
+PROD_APP = os.environ.get("PROD_APP", "llamacppqwen3627bggufv3").strip()
 TRAIN_APP = os.environ.get("TRAIN_APP", "unsloth").strip()
-GPU_NODE = os.environ.get("GPU_NODE", "").strip()
-GPU_DEVICE = os.environ.get("GPU_DEVICE", "").strip()
+GPU_NODE = os.environ.get("GPU_NODE", "olares").strip()
+GPU_DEVICE_ENV = os.environ.get("GPU_DEVICE", "").strip()  # optional; auto-discovered if empty
 PROD_VRAM_GI = os.environ.get("PROD_VRAM_GI", "23").strip()
 TRAIN_VRAM_GI = os.environ.get("TRAIN_VRAM_GI", "22").strip()
 WATCH_TIMEOUT = os.environ.get("WATCH_TIMEOUT", "15m").strip()
 
 # Comma-separated Market app names that must be Running when the mode settles.
 # EmbeddingGemma / Router / kbmcp: resume WITHOUT compute-binding (never rebind Intel GPU).
-DEFAULT_PROD_ENSURE = f"{PROD_APP},router,embeddinggemma,kbmcp"
-DEFAULT_TRAIN_ENSURE = f"{TRAIN_APP},router,embeddinggemma,kbmcp"
+DEFAULT_PROD_ENSURE = f"{PROD_APP},router,embeddinggemmav3,kbmcp"
+DEFAULT_TRAIN_ENSURE = f"{TRAIN_APP},router,embeddinggemmav3,kbmcp"
 
 
 def _parse_list(raw: str, default: str) -> list[str]:
@@ -61,11 +61,12 @@ GPU_BOUND_APPS = {PROD_APP, TRAIN_APP}
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
-app = FastAPI(title="GPU Mode Switch", version="0.1.0")
+app = FastAPI(title="GPU Mode Switch", version="0.1.1")
 _lock = asyncio.Lock()
 _busy = False
 _last_error = ""
 _last_log: list[str] = []
+_discovered_device: dict[str, Any] | None = None  # cache {id, node, name, mode, ...}
 
 
 class SwitchRequest(BaseModel):
@@ -143,13 +144,125 @@ async def cli_json(*args: str) -> Any:
         raise RuntimeError(f"non-JSON from olares-cli {' '.join(args)}: {text[:300]}")
 
 
-def binding_flag(vram_gi: str) -> list[str]:
-    if not GPU_NODE or not GPU_DEVICE:
+def _is_nvidia_device(dev: dict[str, Any]) -> bool:
+    blob = " ".join(
+        str(dev.get(k) or "")
+        for k in ("mode", "name", "cardModel", "id", "gpuType")
+    ).lower()
+    mode = str(dev.get("mode") or "").lower()
+    if mode in ("nvidia", "nvidia-gb10"):
+        return True
+    return any(tok in blob for tok in ("nvidia", "geforce", "rtx", "cuda"))
+
+
+async def list_compute_nodes() -> list[dict[str, Any]]:
+    data = await cli_json("settings", "compute", "list")
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        for key in ("nodes", "data", "items"):
+            if isinstance(data.get(key), list):
+                return data[key]
+    raise RuntimeError(f"unexpected compute list shape: {type(data).__name__}")
+
+
+async def resolve_gpu_device(*, force: bool = False) -> dict[str, Any]:
+    """Return {node, device_id, name, mode, source} for the NVIDIA card.
+
+    If GPU_DEVICE env is set, use it. Otherwise call
+    `olares-cli settings compute list -o json` and pick the NVIDIA device on
+    GPU_NODE (default olares).
+    """
+    global _discovered_device
+    if not force and _discovered_device and _discovered_device.get("device_id"):
+        return _discovered_device
+
+    node = GPU_NODE or "olares"
+    if GPU_DEVICE_ENV:
+        info = {
+            "node": node,
+            "device_id": GPU_DEVICE_ENV,
+            "name": None,
+            "mode": None,
+            "source": "env",
+        }
+        _discovered_device = info
+        return info
+
+    nodes = await list_compute_nodes()
+    candidates: list[dict[str, Any]] = []
+    for n in nodes:
+        nname = str(n.get("nodeName") or n.get("name") or "")
+        if node and nname and nname != node:
+            continue
+        for d in n.get("devices") or []:
+            if not isinstance(d, dict):
+                continue
+            if _is_nvidia_device(d):
+                candidates.append(
+                    {
+                        "node": nname or node,
+                        "device_id": str(d.get("id") or d.get("deviceId") or ""),
+                        "name": d.get("name") or d.get("cardModel"),
+                        "mode": d.get("mode"),
+                        "support_type": d.get("supportType"),
+                        "health": d.get("health"),
+                        "memory": d.get("memory"),
+                        "source": "auto",
+                    }
+                )
+    # Fallback: any NVIDIA on any node if node filter yielded nothing
+    if not candidates:
+        for n in nodes:
+            nname = str(n.get("nodeName") or n.get("name") or "")
+            for d in n.get("devices") or []:
+                if isinstance(d, dict) and _is_nvidia_device(d):
+                    candidates.append(
+                        {
+                            "node": nname or node,
+                            "device_id": str(d.get("id") or d.get("deviceId") or ""),
+                            "name": d.get("name") or d.get("cardModel"),
+                            "mode": d.get("mode"),
+                            "support_type": d.get("supportType"),
+                            "health": d.get("health"),
+                            "memory": d.get("memory"),
+                            "source": "auto-any-node",
+                        }
+                    )
+
+    candidates = [c for c in candidates if c.get("device_id")]
+    if not candidates:
         raise RuntimeError(
-            "GPU_NODE and GPU_DEVICE must be set (Settings → Accelerator / "
-            "olares-cli settings compute list). Edit this app's envs after install."
+            "Could not auto-discover an NVIDIA GPU device id. "
+            "Set GPU_DEVICE manually, or check: olares-cli settings compute list"
         )
-    return ["--compute-binding", f"{GPU_NODE}:{GPU_DEVICE}:{vram_gi}"]
+    # Prefer MemorySlice + healthy
+    def rank(c: dict[str, Any]) -> tuple:
+        st = str(c.get("support_type") or "").lower()
+        health = str(c.get("health") or "").lower()
+        return (
+            0 if "memory" in st else 1,
+            0 if health in ("yes", "healthy", "ok", "") else 1,
+        )
+
+    candidates.sort(key=rank)
+    info = candidates[0]
+    _discovered_device = info
+    logger.info(
+        "discovered GPU device id=%s node=%s name=%s source=%s",
+        info["device_id"],
+        info["node"],
+        info.get("name"),
+        info.get("source"),
+    )
+    return info
+
+
+async def binding_flag(vram_gi: str) -> list[str]:
+    info = await resolve_gpu_device()
+    node = info["node"]
+    device = info["device_id"]
+    return ["--compute-binding", f"{node}:{device}:{vram_gi}"]
 
 
 def _normalize_status(name: str, data: Any) -> dict[str, Any]:
@@ -199,7 +312,7 @@ async def stop_app(name: str) -> None:
 async def resume_app(name: str, *, with_gpu: bool, vram_gi: str | None = None) -> None:
     args = ["market", "resume", name]
     if with_gpu:
-        args += binding_flag(vram_gi or PROD_VRAM_GI)
+        args += await binding_flag(vram_gi or PROD_VRAM_GI)
     # Non-GPU apps (Router, EmbeddingGemma, kbmcp): plain resume — never touch binding
     args += ["--watch", f"--watch-timeout={WATCH_TIMEOUT}"]
     code, out, err = await run_cli(*args)
@@ -285,16 +398,25 @@ async def healthz():
 
 @app.get("/api/config")
 async def api_config():
+    disc = None
+    try:
+        disc = await resolve_gpu_device()
+    except Exception as e:
+        disc = {"error": str(e)[:300]}
     return {
         "prod_app": PROD_APP,
         "train_app": TRAIN_APP,
         "gpu_node": GPU_NODE or None,
-        "gpu_device": GPU_DEVICE or None,
+        "gpu_device_env": GPU_DEVICE_ENV or None,
+        "gpu_device": (disc or {}).get("device_id") if isinstance(disc, dict) else None,
+        "gpu_device_discovery": disc,
         "prod_vram_gi": PROD_VRAM_GI,
         "train_vram_gi": TRAIN_VRAM_GI,
         "production_ensure_running": PRODUCTION_ENSURE_RUNNING,
         "training_ensure_running": TRAINING_ENSURE_RUNNING,
-        "binding_configured": bool(GPU_NODE and GPU_DEVICE),
+        "binding_configured": bool(
+            isinstance(disc, dict) and disc.get("device_id")
+        ),
         "kb_ask_offline_in_training": True,
     }
 
@@ -330,11 +452,22 @@ async def api_status():
         _is_running(x.get("state", "")) for x in ensure_states
     )
 
+    disc_err = None
+    try:
+        disc = await resolve_gpu_device()
+    except Exception as e:
+        disc = None
+        disc_err = str(e)[:400]
+
     binding = None
-    if GPU_NODE and GPU_DEVICE:
+    if disc and disc.get("device_id"):
         binding = {
-            "node": GPU_NODE,
-            "device": GPU_DEVICE,
+            "node": disc.get("node") or GPU_NODE,
+            "device": disc.get("device_id"),
+            "name": disc.get("name"),
+            "mode": disc.get("mode"),
+            "support_type": disc.get("support_type"),
+            "source": disc.get("source"),
             "prod_gi": PROD_VRAM_GI,
             "train_gi": TRAIN_VRAM_GI,
         }
@@ -352,6 +485,7 @@ async def api_status():
         "ensure_all_running": all_ok,
         "apps": companions,
         "gpu_binding": binding,
+        "gpu_device_discovery_error": disc_err,
         "kb_ask_note": (
             "KB ask is offline in Training (Qwen suspended). "
             "search/embed via EmbeddingGemma still works."
@@ -362,7 +496,8 @@ async def api_status():
             "prod_app": PROD_APP,
             "train_app": TRAIN_APP,
             "gpu_node": GPU_NODE or None,
-            "gpu_device": GPU_DEVICE or None,
+            "gpu_device_env": GPU_DEVICE_ENV or None,
+            "gpu_device": (disc or {}).get("device_id") if disc else None,
             "production_ensure_running": PRODUCTION_ENSURE_RUNNING,
             "training_ensure_running": TRAINING_ENSURE_RUNNING,
         },

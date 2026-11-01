@@ -15,7 +15,7 @@ EmbeddingGemma (Intel) is resumed **without** `--compute-binding` so its binding
 
 ## Image
 
-`ghcr.io/wooj-commits/olares-mode-switch:0.1.0`
+`ghcr.io/wooj-commits/olares-mode-switch:0.1.1`
 
 ## Chart package
 
@@ -23,21 +23,21 @@ Build locally:
 
 ```bash
 helm package chart/modeswitch -d .
-# -> modeswitch-0.1.0.tgz
+# -> modeswitch-0.1.1.tgz
 ```
 
 ## Env vars
 
 | Env | Default | Purpose |
 |-----|---------|---------|
-| `PROD_APP` | `qwen3627b` | Qwen llama.cpp clone Market name |
+| `PROD_APP` | `llamacppqwen3627bggufv3` | Qwen llama.cpp clone Market name |
 | `TRAIN_APP` | `unsloth` | Unsloth Market name |
 | `GPU_NODE` | _(empty)_ | Node from Accelerator |
 | `GPU_DEVICE` | _(empty)_ | Device id from Accelerator |
 | `PROD_VRAM_GI` | `23` | Production MemorySlice |
 | `TRAIN_VRAM_GI` | `22` | Training MemorySlice |
-| `PRODUCTION_ENSURE_RUNNING` | `qwen3627b,router,embeddinggemma,kbmcp` | Must be Running after Production switch |
-| `TRAINING_ENSURE_RUNNING` | `unsloth,router,embeddinggemma,kbmcp` | Must be Running after Training switch |
+| `PRODUCTION_ENSURE_RUNNING` | `llamacppqwen3627bggufv3,router,embeddinggemmav3,kbmcp` | Must be Running after Production switch |
+| `TRAINING_ENSURE_RUNNING` | `unsloth,router,embeddinggemmav3,kbmcp` | Must be Running after Training switch |
 
 Update the ensure lists if your Market names differ (e.g. a custom EmbeddingGemma clone name).
 

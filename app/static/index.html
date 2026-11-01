@@ -100,8 +100,12 @@ async function refresh() {
     const q = s.prod?.state || '?';
     const u = s.train?.state || '?';
     const bind = s.gpu_binding
-      ? `${s.gpu_binding.node} / ${s.gpu_binding.device} · prod ${s.gpu_binding.prod_gi}Gi · train ${s.gpu_binding.train_gi}Gi`
-      : 'not configured (set GPU_NODE + GPU_DEVICE envs)';
+      ? `${s.gpu_binding.node} / ${s.gpu_binding.device}` +
+        (s.gpu_binding.name ? ` (${s.gpu_binding.name})` : '') +
+        ` · source=${s.gpu_binding.source || '?'} · prod ${s.gpu_binding.prod_gi}Gi · train ${s.gpu_binding.train_gi}Gi`
+      : (s.gpu_device_discovery_error
+          ? ('discovery failed: ' + s.gpu_device_discovery_error)
+          : 'GPU device not resolved yet');
     const busyTag = busy ? ' <span class="pill busy">switching…</span>' : '';
     const ensureOk = s.ensure_all_running ? '<span class="ok">all Running</span>' : '<span class="err">waiting</span>';
     $('status-line').innerHTML =

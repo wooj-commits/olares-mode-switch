@@ -7,7 +7,7 @@ metadata:
   title: GPU Mode Switch
   description: Toggle Production (Qwen 27B) vs Training (Unsloth) on the RTX GPU
   icon: https://app.cdn.olares.com/appstore/default/defaulticon.webp
-  version: 0.1.0
+  version: 0.1.1
   categories:
   - AI
   - Utilities_v112
@@ -28,7 +28,7 @@ permission:
   loginOlaresCLI: true
 
 spec:
-  versionName: '0.1.0'
+  versionName: '0.1.1'
   fullDescription: |
     One-page control to flip the Olares One RTX 5090 between Production
     (Qwen3.6-27B llama.cpp, MemorySlice 23Gi) and Training (Unsloth, ~22Gi).
@@ -73,7 +73,7 @@ envs:
   type: string
   editable: true
   applyOnChange: true
-  default: "qwen3627b"
+  default: "llamacppqwen3627bggufv3"
   description: Market app name of the Qwen llama.cpp Engine Base clone
 - envName: TRAIN_APP
   required: true
@@ -87,15 +87,15 @@ envs:
   type: string
   editable: true
   applyOnChange: true
-  default: ""
+  default: "olares"
   description: Node name from Settings → Accelerator (olares-cli settings compute list)
 - envName: GPU_DEVICE
-  required: true
+  required: false
   type: string
   editable: true
   applyOnChange: true
   default: ""
-  description: Device id from Settings → Accelerator
+  description: Optional. Leave empty to auto-discover the NVIDIA device on GPU_NODE via olares-cli settings compute list
 - envName: PROD_VRAM_GI
   required: true
   type: string
@@ -115,12 +115,12 @@ envs:
   type: string
   editable: true
   applyOnChange: true
-  default: "qwen3627b,router,embeddinggemma,kbmcp"
+  default: "llamacppqwen3627bggufv3,router,embeddinggemmav3,kbmcp"
   description: Comma-separated apps that must be Running in Production (no GPU rebind for non-primary)
 - envName: TRAINING_ENSURE_RUNNING
   required: false
   type: string
   editable: true
   applyOnChange: true
-  default: "unsloth,router,embeddinggemma,kbmcp"
+  default: "unsloth,router,embeddinggemmav3,kbmcp"
   description: Comma-separated apps that must be Running in Training
