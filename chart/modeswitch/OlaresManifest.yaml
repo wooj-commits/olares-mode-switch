@@ -6,8 +6,8 @@ metadata:
   name: modeswitch
   title: GPU Mode Switch
   description: Toggle Production (Qwen 27B) vs Training (Unsloth) on the RTX GPU
-  icon: https://app.cdn.olares.com/appstore/default/defaulticon.webp
-  version: 0.1.1
+  icon: https://raw.githubusercontent.com/wooj-commits/olares-mode-switch/main/assets/icon.png
+  version: 0.1.2
   categories:
   - AI
   - Utilities_v112
@@ -17,7 +17,7 @@ entrances:
   host: modeswitch
   port: 8080
   title: GPU Mode Switch
-  icon: https://app.cdn.olares.com/appstore/default/defaulticon.webp
+  icon: https://raw.githubusercontent.com/wooj-commits/olares-mode-switch/main/assets/icon.png
   authLevel: private
   visible: true
   openMethod: iframe
@@ -28,7 +28,7 @@ permission:
   loginOlaresCLI: true
 
 spec:
-  versionName: '0.1.1'
+  versionName: '0.1.2'
   fullDescription: |
     One-page control to flip the Olares One RTX 5090 between Production
     (Qwen3.6-27B llama.cpp, MemorySlice 23Gi) and Training (Unsloth, ~22Gi).
